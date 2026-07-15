@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from extention import db
-from .models import User
+from app.auth.authModels import User
 
 
 main = Blueprint('main', __name__)
