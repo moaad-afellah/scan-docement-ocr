@@ -1,51 +1,28 @@
-import re
-import pytesseract
-from PIL import Image
-
-pytesseract.pytesseract.tesseract_cmd = (
-    r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-)
+from app.ocrWorkspace.ocrWorkspaceEngines.ocrEnginePytesseract import run_ocr_pytesseract
+from app.ocrWorkspace.ocrWorkspaceEngines.ocrEngineEasyocr import run_ocr_easyocr
+from app.ocrWorkspace.ocrWorkspaceEngines.ocrEngineMicroservice import run_ocr_microservice
+from app.ocrWorkspace.ocrWorkspaceEngines.ocrFieldExtractor import extract_fields
 
 
-def extract_fields(raw_text):
-    """Extracts information from the OCR text."""
+def run_ocr(file_path, engine="pytesseract", lang="eng", field_labels=None):
+    """Dispatches to the selected OCR engine and extracts fields dynamically."""
 
-    result = {}
+    if field_labels is None:
+        field_labels = []
 
-    last = re.search(r"Last Name\s+([A-Z]+)", raw_text)  # Use search to find and extract the matching value, regardless of its position in the text
-    first = re.search(r"First Name\s+([A-Z]+)", raw_text)
-    birth = re.search(
-        r"Date of Birth\s+(\d{2}\.\d{2}\.\d{4})\s+in\s+([A-Z]+)",
-        raw_text
-    )
-    valid = re.search(
-        r"Valid Until\s+(\d{2}\.\d{2}\.\d{4})",
-        raw_text
-    )
-    card = re.search(
-        r"Card Number\s+([A-Z0-9]+)",
-        raw_text
-    )
+    if engine == "pytesseract":
+        raw_text = run_ocr_pytesseract(file_path, lang=lang)
+    elif engine == "easyocr":
+        raw_text = run_ocr_easyocr(file_path)
+    elif engine == "tesseract-js":
+        raw_text = run_ocr_microservice(file_path)
+    else:
+        raise ValueError(f"Unsupported OCR engine: {engine}")
 
-    result["last_name"] = last.group(1) if last else None
-    result["first_name"] = first.group(1) if first else None
-    result["date_of_birth"] = birth.group(1) if birth else None
-    result["place_of_birth"] = birth.group(2) if birth else None
-    result["valid_until"] = valid.group(1) if valid else None
-    result["card_number"] = card.group(1) if card else None
-
-    return result
-
-
-def run_ocr(file_path, lang="eng"):
-    """Reads the image, performs OCR, and returns extracted fields."""
-
-    img = Image.open(file_path)
-    raw_text = pytesseract.image_to_string(img, lang=lang)
-
-    extracted_data = extract_fields(raw_text)
+    extracted_data = extract_fields(raw_text, field_labels)
 
     return {
+        "engine": engine,
         "raw_text": raw_text,
         "fields": extracted_data
     }
