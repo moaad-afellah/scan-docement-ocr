@@ -1,5 +1,9 @@
 import os
-from flask import Blueprint, request, jsonify, send_file
+import io
+import csv
+import json
+from flask import Blueprint, request, jsonify, send_file, Response, make_response
+from flask_jwt_extended import jwt_required, get_jwt_identity
 from extention import db
 from app.ocrWorkspace.ocrWorkspaceServices.ocrWorkspaceServicesProcess import run_ocr
 from app.ocrWorkspace.ocrWorkspaceModels.ocrWorkspaceModelsUpload import DocumentType, DocumentTypeField
@@ -51,6 +55,7 @@ def list_document_types():
 
 
 @ocr_workspace_bp.route("/document-types", methods=["POST"])
+@jwt_required()
 def create_document_type():
     data = request.get_json()
     if not data:
@@ -73,6 +78,7 @@ def create_document_type():
 
 
 @ocr_workspace_bp.route("/document-types/<int:doc_type_id>/fields", methods=["POST"])
+@jwt_required()
 def add_document_type_field(doc_type_id):
     doc_type = DocumentType.query.get(doc_type_id)
     if not doc_type:
@@ -82,7 +88,6 @@ def add_document_type_field(doc_type_id):
     if not data:
         return jsonify({"error": "No JSON data provided"}), 400
 
-    # Accept either a single field object {...} or a list of field objects [{...}, {...}]
     fields_to_create = data if isinstance(data, list) else [data]
 
     created_fields = []
@@ -110,6 +115,7 @@ def add_document_type_field(doc_type_id):
 
 
 @ocr_workspace_bp.route("/evaluations", methods=["POST"])
+@jwt_required()
 def create_evaluation():
     if "file" not in request.files:
         return jsonify({"error": "No file provided"}), 400
@@ -120,10 +126,12 @@ def create_evaluation():
 
     engine_id = request.form.get("engine_id")
     document_type_id = request.form.get("document_type_id")
-    user_id = request.form.get("user_id")
+    
+    # Securely extract user_id from JWT token instead of blindly trusting form-data
+    user_id = int(get_jwt_identity())
 
-    if not engine_id or not document_type_id or not user_id:
-        return jsonify({"error": "engine_id, document_type_id, and user_id are required"}), 400
+    if not engine_id or not document_type_id:
+        return jsonify({"error": "engine_id and document_type_id are required"}), 400
 
     doc_type = DocumentType.query.get(document_type_id)
     if not doc_type:
@@ -156,6 +164,7 @@ def create_evaluation():
 
         ocr_result = run_ocr(file_path, engine=engine.code, field_labels=field_labels)
         extracted_fields = ocr_result.get("fields", {})
+        new_evaluation.raw_text = ocr_result.get("raw_text")
 
         for field_def in sorted_fields:
             key = field_def.label.lower().replace(" ", "_")
@@ -182,6 +191,7 @@ def create_evaluation():
     return jsonify({
         "id": new_evaluation.id,
         "status": new_evaluation.status,
+        "raw_text": new_evaluation.raw_text,
         "error_message": new_evaluation.error_message,
         "fields": [
             {
@@ -194,21 +204,58 @@ def create_evaluation():
         ]
     }), 201
 
+
 @ocr_workspace_bp.route("/evaluations/<int:evaluation_id>/fields", methods=["PUT"])
+@jwt_required()
 def submit_reference_values(evaluation_id):
     evaluation = Evaluation.query.get(evaluation_id)
     if not evaluation:
         return jsonify({"error": "Evaluation not found"}), 404
 
+    current_user_id = int(get_jwt_identity())
+    if evaluation.user_id != current_user_id:
+        return jsonify({"error": "Unauthorized to modify this evaluation"}), 403
+
     data = request.get_json()
     if not data or "fields" not in data:
         return jsonify({"error": "fields data is required"}), 400
 
-    for eval_field in evaluation.fields:
-        field_data = data["fields"].get(str(eval_field.id))
-        if field_data:
+    existing_field_ids = {str(f.id): f for f in evaluation.fields}
+
+    for key, field_data in data["fields"].items():
+        if key in existing_field_ids:
+            eval_field = existing_field_ids[key]
             eval_field.reference_value = field_data.get("reference_value")
             eval_field.status = field_data.get("status")
+            if "label" in field_data:
+                eval_field.label = field_data["label"]
+        else:
+            # Dynamic new field added during evaluation review
+            label = field_data.get("label", key)
+            max_pos = max([f.position for f in evaluation.fields], default=0)
+            new_field = EvaluationField(
+                evaluation_id=evaluation.id,
+                label=label,
+                ocr_value=field_data.get("ocr_value"),
+                reference_value=field_data.get("reference_value"),
+                status=field_data.get("status", "pending"),
+                position=max_pos + 1
+            )
+            db.session.add(new_field)
+
+    # Process explicit new_fields list if passed
+    if "new_fields" in data and isinstance(data["new_fields"], list):
+        max_pos = max([f.position for f in evaluation.fields], default=0)
+        for idx, new_f in enumerate(data["new_fields"]):
+            new_field = EvaluationField(
+                evaluation_id=evaluation.id,
+                label=new_f.get("label", "Custom Field"),
+                ocr_value=new_f.get("ocr_value"),
+                reference_value=new_f.get("reference_value"),
+                status=new_f.get("status", "pending"),
+                position=max_pos + idx + 1
+            )
+            db.session.add(new_field)
 
     evaluation.correct_count = data.get("correct_count", 0)
     evaluation.incorrect_count = data.get("incorrect_count", 0)
@@ -229,20 +276,28 @@ def submit_reference_values(evaluation_id):
         "total_count": evaluation.total_count,
         "fields": [
             {
+                "id": f.id,
                 "label": f.label,
                 "ocr_value": f.ocr_value,
                 "reference_value": f.reference_value,
-                "status": f.status
+                "status": f.status,
+                "position": f.position
             }
             for f in sorted(evaluation.fields, key=lambda f: f.position)
         ]
     }), 200
 
+
 @ocr_workspace_bp.route("/evaluations/<int:evaluation_id>", methods=["GET"])
+@jwt_required()
 def get_evaluation(evaluation_id):
     evaluation = Evaluation.query.get(evaluation_id)
     if not evaluation:
         return jsonify({"error": "Evaluation not found"}), 404
+
+    current_user_id = int(get_jwt_identity())
+    if evaluation.user_id != current_user_id:
+        return jsonify({"error": "Unauthorized to view this evaluation"}), 403
 
     return jsonify({
         "id": evaluation.id,
@@ -251,6 +306,7 @@ def get_evaluation(evaluation_id):
         "engine_id": evaluation.engine_id,
         "file_name": evaluation.file_name,
         "status": evaluation.status,
+        "raw_text": evaluation.raw_text,
         "accuracy": evaluation.accuracy,
         "correct_count": evaluation.correct_count,
         "incorrect_count": evaluation.incorrect_count,
@@ -260,6 +316,7 @@ def get_evaluation(evaluation_id):
         "created_at": evaluation.created_at.isoformat(),
         "fields": [
             {
+                "id": f.id,
                 "label": f.label,
                 "ocr_value": f.ocr_value,
                 "reference_value": f.reference_value,
@@ -272,8 +329,11 @@ def get_evaluation(evaluation_id):
 
 
 @ocr_workspace_bp.route("/evaluations", methods=["GET"])
+@jwt_required()
 def list_evaluations():
-    evaluations = Evaluation.query.order_by(Evaluation.created_at.desc()).all()
+    current_user_id = int(get_jwt_identity())
+    # Optionally filter by the logged-in user so they only see their own evaluations
+    evaluations = Evaluation.query.filter_by(user_id=current_user_id).order_by(Evaluation.created_at.desc()).all()
 
     return jsonify([
         {
@@ -288,17 +348,24 @@ def list_evaluations():
 
 
 @ocr_workspace_bp.route("/evaluations/<int:evaluation_id>/file", methods=["GET"])
+@jwt_required()
 def get_evaluation_file(evaluation_id):
     evaluation = Evaluation.query.get(evaluation_id)
     if not evaluation:
         return jsonify({"error": "Evaluation not found"}), 404
+
+    current_user_id = int(get_jwt_identity())
+    if evaluation.user_id != current_user_id:
+        return jsonify({"error": "Unauthorized to access this file"}), 403
 
     if not evaluation.file_path or not os.path.exists(evaluation.file_path):
         return jsonify({"error": "File not found on server"}), 404
 
     return send_file(evaluation.file_path)
 
+
 @ocr_workspace_bp.route("/evaluations/batch", methods=["POST"])
+@jwt_required()
 def create_evaluations_batch():
     files = request.files.getlist("files")
     if not files:
@@ -306,10 +373,12 @@ def create_evaluations_batch():
 
     engine_id = request.form.get("engine_id")
     document_type_id = request.form.get("document_type_id")
-    user_id = request.form.get("user_id")
+    
+    # Securely extract user_id from token
+    user_id = int(get_jwt_identity())
 
-    if not engine_id or not document_type_id or not user_id:
-        return jsonify({"error": "engine_id, document_type_id, and user_id are required"}), 400
+    if not engine_id or not document_type_id:
+        return jsonify({"error": "engine_id and document_type_id are required"}), 400
 
     doc_type = DocumentType.query.get(document_type_id)
     if not doc_type:
@@ -347,6 +416,7 @@ def create_evaluations_batch():
 
             ocr_result = run_ocr(file_path, engine=engine.code, field_labels=field_labels)
             extracted_fields = ocr_result.get("fields", {})
+            new_evaluation.raw_text = ocr_result.get("raw_text")
 
             for field_def in sorted_fields:
                 key = field_def.label.lower().replace(" ", "_")
@@ -372,9 +442,96 @@ def create_evaluations_batch():
             "id": new_evaluation.id,
             "file_name": new_evaluation.file_name,
             "status": new_evaluation.status,
+            "raw_text": new_evaluation.raw_text,
             "error_message": new_evaluation.error_message
         })
 
     db.session.commit()
 
     return jsonify(results), 201
+
+
+@ocr_workspace_bp.route("/evaluations/<int:evaluation_id>/export", methods=["GET"])
+@jwt_required()
+def export_evaluation(evaluation_id):
+    evaluation = Evaluation.query.get(evaluation_id)
+    if not evaluation:
+        return jsonify({"error": "Evaluation not found"}), 404
+
+    current_user_id = int(get_jwt_identity())
+    if evaluation.user_id != current_user_id:
+        return jsonify({"error": "Unauthorized to export this evaluation"}), 403
+
+    export_format = request.args.get("format", "json").lower()
+    file_basename = os.path.splitext(evaluation.file_name)[0]
+
+    sorted_fields = sorted(evaluation.fields, key=lambda f: f.position)
+
+    if export_format == "csv":
+        si = io.StringIO()
+        writer = csv.writer(si)
+        writer.writerow(["Field Label", "OCR Value", "Reference Value", "Status"])
+        for f in sorted_fields:
+            writer.writerow([f.label, f.ocr_value or "", f.reference_value or "", f.status or ""])
+
+        output = make_response(si.getvalue())
+        output.headers["Content-Disposition"] = f"attachment; filename={file_basename}_evaluation.csv"
+        output.headers["Content-type"] = "text/csv"
+        return output
+
+    elif export_format in ["txt", "text"]:
+        lines = [
+            f"VeraScan Evaluation Export",
+            f"==========================",
+            f"File Name: {evaluation.file_name}",
+            f"Engine: {evaluation.engine.name if evaluation.engine else 'N/A'}",
+            f"Document Type: {evaluation.document_type.name if evaluation.document_type else 'N/A'}",
+            f"Accuracy: {evaluation.accuracy or 0}%",
+            f"Status Counts: {evaluation.correct_count} Correct, {evaluation.incorrect_count} Incorrect, {evaluation.missing_count} Missing, {evaluation.additional_count} Additional",
+            f"Date: {evaluation.created_at.isoformat() if evaluation.created_at else ''}",
+            f"",
+            f"FIELD COMPARISON:",
+            f"-----------------"
+        ]
+        for f in sorted_fields:
+            lines.append(f"Label: {f.label}")
+            lines.append(f"  OCR Output : {f.ocr_value or '-'}")
+            lines.append(f"  Reference  : {f.reference_value or '-'}")
+            lines.append(f"  Status     : {f.status or 'Pending'}\n")
+
+        output = make_response("\n".join(lines))
+        output.headers["Content-Disposition"] = f"attachment; filename={file_basename}_evaluation.txt"
+        output.headers["Content-type"] = "text/plain"
+        return output
+
+    else:  # json / default
+        export_data = {
+            "evaluation_id": evaluation.id,
+            "file_name": evaluation.file_name,
+            "document_type": evaluation.document_type.name if evaluation.document_type else None,
+            "engine": evaluation.engine.name if evaluation.engine else None,
+            "accuracy": evaluation.accuracy,
+            "summary": {
+                "correct_count": evaluation.correct_count,
+                "incorrect_count": evaluation.incorrect_count,
+                "missing_count": evaluation.missing_count,
+                "additional_count": evaluation.additional_count,
+                "total_count": evaluation.total_count
+            },
+            "created_at": evaluation.created_at.isoformat() if evaluation.created_at else None,
+            "fields": [
+                {
+                    "id": f.id,
+                    "label": f.label,
+                    "ocr_value": f.ocr_value,
+                    "reference_value": f.reference_value,
+                    "status": f.status,
+                    "position": f.position
+                }
+                for f in sorted_fields
+            ]
+        }
+        output = make_response(json.dumps(export_data, indent=2))
+        output.headers["Content-Disposition"] = f"attachment; filename={file_basename}_evaluation.json"
+        output.headers["Content-type"] = "application/json"
+        return output

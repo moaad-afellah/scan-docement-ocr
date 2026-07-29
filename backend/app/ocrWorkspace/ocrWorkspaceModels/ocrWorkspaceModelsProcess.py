@@ -19,6 +19,7 @@ class Evaluation(db.Model):
     missing_count = db.Column(db.Integer, default=0)            # "0 MISSING"
     additional_count = db.Column(db.Integer, default=0)         # "0 ADDITIONAL"
     total_count = db.Column(db.Integer, default=0)
+    raw_text = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     fields = db.relationship('EvaluationField', backref='evaluation', cascade='all, delete-orphan')

@@ -1,15 +1,27 @@
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required, get_jwt_identity
 from extention import db
 from app.settings.settingsModels import UserSettings, OcrEngine
 
 settings_bp = Blueprint("settings", __name__)
 
 
+@settings_bp.route("/settings", methods=["GET"])
 @settings_bp.route("/settings/<int:user_id>", methods=["GET"])
-def get_settings(user_id):
-    settings = UserSettings.query.filter_by(user_id=user_id).first()
+@jwt_required()
+def get_settings(user_id=None):
+    current_user_id = int(get_jwt_identity())
+    target_user_id = user_id if user_id is not None else current_user_id
+
+    if current_user_id != target_user_id:
+        return jsonify({"error": "You can only view your own settings"}), 403
+
+    settings = UserSettings.query.filter_by(user_id=target_user_id).first()
     if not settings:
-        return jsonify({"error": "Settings not found for this user"}), 404
+        settings = UserSettings(user_id=target_user_id)
+        db.session.add(settings)
+        db.session.commit()
+
     return jsonify({
         "user_id": settings.user_id,
         "default_engine_id": settings.default_engine_id,
@@ -22,11 +34,20 @@ def get_settings(user_id):
     }), 200
 
 
+@settings_bp.route("/settings", methods=["PUT"])
 @settings_bp.route("/settings/<int:user_id>", methods=["PUT"])
-def update_settings(user_id):
-    settings = UserSettings.query.filter_by(user_id=user_id).first()
+@jwt_required()
+def update_settings(user_id=None):
+    current_user_id = int(get_jwt_identity())
+    target_user_id = user_id if user_id is not None else current_user_id
+
+    if current_user_id != target_user_id:
+        return jsonify({"error": "You can only update your own settings"}), 403
+
+    settings = UserSettings.query.filter_by(user_id=target_user_id).first()
     if not settings:
-        return jsonify({"error": "Settings not found for this user"}), 404
+        settings = UserSettings(user_id=target_user_id)
+        db.session.add(settings)
 
     data = request.get_json()
     if not data:
@@ -38,7 +59,16 @@ def update_settings(user_id):
             setattr(settings, key, data[key])
 
     db.session.commit()
-    return jsonify({key: getattr(settings, key) for key in data.keys()}), 200
+    return jsonify({
+        "user_id": settings.user_id,
+        "default_engine_id": settings.default_engine_id,
+        "language": settings.language,
+        "email_alerts": settings.email_alerts,
+        "completion_alerts": settings.completion_alerts,
+        "weekly_summary": settings.weekly_summary,
+        "default_export_fmt": settings.default_export_fmt,
+        "include_original": settings.include_original
+    }), 200
 
 
 @settings_bp.route("/ocr-engines", methods=["GET"])
@@ -56,7 +86,9 @@ def list_ocr_engines():
 
 
 @settings_bp.route("/ocr-engines", methods=["POST"])
+@jwt_required()
 def create_ocr_engine():
+    # Optional: Add role check here if you only want admins to create engines
     data = request.get_json()
 
     if not data:

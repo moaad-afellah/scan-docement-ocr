@@ -1,14 +1,19 @@
 from flask import Blueprint, request, jsonify
+from flask_jwt_extended import jwt_required, get_jwt_identity
 from extention import db
 from app.ocrWorkspace.ocrWorkspaceModels.ocrWorkspaceModelsProcess import Evaluation
 
 history_bp = Blueprint("history", __name__)
 
 
-# GET all evaluations with filters and sorting
+# GET all evaluations with filters and sorting for the current user
 @history_bp.route("/history", methods=["GET"])
+@jwt_required()
 def list_evaluations():
-    query = Evaluation.query
+    current_user_id = int(get_jwt_identity())
+    
+    # Restrict query strictly to the logged-in user's evaluations
+    query = Evaluation.query.filter_by(user_id=current_user_id)
 
     # Search by file name
     search = request.args.get("search")
@@ -76,16 +81,22 @@ def list_evaluations():
 
 
 
-# DELETE evaluation by id
+# DELETE evaluation by id (restricted to owner)
 @history_bp.route("/history/<int:evaluation_id>", methods=["DELETE"])
+@jwt_required()
 def delete_evaluation(evaluation_id):
-
     evaluation = Evaluation.query.get(evaluation_id)
 
     if not evaluation:
         return jsonify({
             "error": "Evaluation not found"
         }), 404
+
+    current_user_id = int(get_jwt_identity())
+    if evaluation.user_id != current_user_id:
+        return jsonify({
+            "error": "Unauthorized to delete this evaluation"
+        }), 403
 
     db.session.delete(evaluation)
     db.session.commit()
