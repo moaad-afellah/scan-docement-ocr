@@ -31,6 +31,7 @@ export interface EvaluationField {
 
 export interface Evaluation {
   id: number;
+  file_name?: string | null;
   status: EvaluationStatus;
   raw_text?: string | null;
   error_message?: string | null;
@@ -104,10 +105,29 @@ export const ocrWorkspaceService = {
       .then((r) => r.data);
   },
 
-  getEvaluationFileUrl(evaluationId: number) {
-    // Used directly as an <img>/<iframe> src or fetched with the auth
-    // header via apiClient when a blob is needed instead of a plain URL.
-    return `${apiClient.defaults.baseURL}/evaluations/${evaluationId}/file`;
+  async getEvaluationFileUrl(evaluationId: number) {
+    // Fetch the protected file through the authenticated API client so the
+    // JWT is attached correctly, then expose it as a browser blob URL.
+    const response = await apiClient.get(`/evaluations/${evaluationId}/file`, {
+      responseType: "blob",
+    });
+
+    return window.URL.createObjectURL(response.data);
+  },
+
+  async downloadEvaluationFile(evaluationId: number, suggestedFileName: string) {
+    const response = await apiClient.get(`/evaluations/${evaluationId}/file`, {
+      responseType: "blob",
+    });
+
+    const blobUrl = window.URL.createObjectURL(response.data);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = suggestedFileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(blobUrl);
   },
 
   // Batch upload (multi-file Workspace flow) -- fire-and-poll
