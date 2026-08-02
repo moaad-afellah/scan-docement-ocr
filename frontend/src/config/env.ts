@@ -1,23 +1,12 @@
-import { z } from 'zod';
+/**
+ * Central place for environment-driven config.
+ *
+ * Set VITE_API_BASE_URL in a .env / .env.local file at the project root
+ * to override the default. Vite only exposes env vars prefixed with VITE_.
+ *
+ * Example .env.local:
+ *   VITE_API_BASE_URL=http://localhost:5000
+ */
 
-const envSchema = z.object({
-  VITE_API_URL: z.string().url().default('http://localhost:5000'),
-  MODE: z.enum(['development', 'production', 'test']).default('development'),
-});
-
-const getEnv = () => {
-  const parsed = envSchema.safeParse({
-    VITE_API_URL: import.meta.env.VITE_API_URL,
-    MODE: import.meta.env.MODE,
-  });
-
-  if (!parsed.success) {
-    console.error('❌ Invalid environment variables:', parsed.error.format());
-    throw new Error('Invalid environment variables');
-  }
-
-  return parsed.data;
-};
-
-export const env = getEnv();
-export type Env = z.infer<typeof envSchema>;
+export const API_BASE_URL: string =
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:5000";

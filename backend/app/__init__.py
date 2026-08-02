@@ -16,6 +16,8 @@ def create_app():
     from app.ocrWorkspace.ocrWorkspaceModels.ocrWorkspaceModelsUpload import DocumentType, DocumentTypeField
     from app.ocrWorkspace.ocrWorkspaceModels.ocrWorkspaceModelsProcess import Evaluation
     from app.ocrWorkspace.ocrWorkspaceModels.ocrWorkspaceModelsReview import EvaluationField
+    # NEW: registers the async batch-job tables (BatchJob, BatchJobFile)
+    from app.ocrWorkspace.ocrWorkspaceModels.ocrWorkspaceModelsBatch import BatchJob, BatchJobFile
 
     from app.auth.authRoutes import main
     from app.ocrWorkspace.ocrWorkspaceRoutes import ocr_workspace_bp
@@ -40,15 +42,32 @@ def seed_initial_data():
     from app.settings.settingsModels import OcrEngine
     from app.ocrWorkspace.ocrWorkspaceModels.ocrWorkspaceModelsUpload import DocumentType, DocumentTypeField
 
+    # CHANGED: renamed to match the engine names actually shown in the UI
+    # (Dashboard leaderboard, Workspace dropdown, Settings default engine).
+    # Codes are left untouched so run_ocr()'s existing dispatch logic for
+    # "pytesseract" / "easyocr" / "tesseract-js" keeps working unmodified.
+    #
+    # NOTE: "docmind" is a NEW 4th engine to match the UI's 4-engine layout.
+    # It has no backing implementation yet -- you'll need to add a branch
+    # for engine.code == "docmind" in ocrWorkspaceServicesProcess.run_ocr(),
+    # or point it at one of the existing OCR backends, before it will
+    # actually process files instead of erroring out.
     default_engines = [
-        {"code": "pytesseract", "name": "PyTesseract", "description": "Open-source Tesseract OCR engine wrapper for Python"},
-        {"code": "easyocr", "name": "EasyOCR", "description": "Deep learning based OCR engine supporting 80+ languages"},
-        {"code": "tesseract-js", "name": "VisionOCR Pro", "description": "High-accuracy general-purpose Tesseract.js microservice"}
+        {"code": "pytesseract", "name": "SwiftScan Lite", "description": "Lightweight, fast general-purpose OCR engine"},
+        {"code": "easyocr", "name": "LexoNet Multilingual", "description": "Deep learning based OCR engine supporting 80+ languages"},
+        {"code": "tesseract-js", "name": "VisionOCR Pro", "description": "High-accuracy general-purpose OCR microservice"},
+        {"code": "docmind", "name": "DocuMind Enterprise", "description": "Enterprise-grade document extraction engine"},
     ]
 
     for engine_data in default_engines:
-        if not OcrEngine.query.filter_by(code=engine_data["code"]).first():
+        existing = OcrEngine.query.filter_by(code=engine_data["code"]).first()
+        if not existing:
             db.session.add(OcrEngine(**engine_data))
+        else:
+            # Keep names/descriptions in sync if this seed changes later,
+            # without touching the id/code that other rows reference.
+            existing.name = engine_data["name"]
+            existing.description = engine_data["description"]
 
     default_doc_types = [
         {
