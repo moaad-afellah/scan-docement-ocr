@@ -5,17 +5,26 @@ import json
 import uuid
 import threading
 from datetime import datetime
+from pathlib import Path
 
 from flask import Blueprint, request, jsonify, send_file, make_response, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from werkzeug.utils import secure_filename
 
-from extention import db
-from app.ocrWorkspace.ocrWorkspaceServices.ocrWorkspaceServicesProcess import run_ocr
-from app.ocrWorkspace.ocrWorkspaceModels.ocrWorkspaceModelsUpload import DocumentType, DocumentTypeField
-from app.ocrWorkspace.ocrWorkspaceModels.ocrWorkspaceModelsProcess import Evaluation
-from app.ocrWorkspace.ocrWorkspaceModels.ocrWorkspaceModelsReview import EvaluationField
-from app.ocrWorkspace.ocrWorkspaceModels.ocrWorkspaceModelsBatch import BatchJob, BatchJobFile
+from backend.extention import db
+from backend.app.ocrWorkspace.ocrWorkspaceServices.ocrWorkspaceServicesProcess import (
+    run_ocr,
+    get_supported_engine_codes,
+    is_supported_engine,
+)
+from backend.app.ocrWorkspace.ocrWorkspaceModels.ocrWorkspaceModelsUpload import (
+    CANONICAL_DOCUMENT_TYPE_CODES,
+    DocumentType,
+    DocumentTypeField,
+)
+from backend.app.ocrWorkspace.ocrWorkspaceModels.ocrWorkspaceModelsProcess import Evaluation
+from backend.app.ocrWorkspace.ocrWorkspaceModels.ocrWorkspaceModelsReview import EvaluationField
+from backend.app.ocrWorkspace.ocrWorkspaceModels.ocrWorkspaceModelsBatch import BatchJob, BatchJobFile
 
 # PDF export
 from reportlab.lib.pagesizes import letter
@@ -30,7 +39,8 @@ from docx.shared import Pt, RGBColor
 
 ocr_workspace_bp = Blueprint("ocr_workspace", __name__)
 
-UPLOAD_FOLDER = "uploads"
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+UPLOAD_FOLDER = BACKEND_ROOT / "uploads"
 
 # Matches the "PNG, JPEG, WebP or PDF · up to 15 MB per file" copy in the
 # upload dropzone -- this used to be UI-only; now it's actually enforced.
@@ -76,7 +86,7 @@ def save_upload_file(file_storage):
     # Prefix with a random token so two users (or the same user twice)
     # uploading "invoice.pdf" can never collide or overwrite each other.
     unique_name = f"{uuid.uuid4().hex}_{safe_name}"
-    file_path = os.path.join(UPLOAD_FOLDER, unique_name)
+    file_path = str(UPLOAD_FOLDER / unique_name)
     file_storage.save(file_path)
 
     return file_path, safe_name
@@ -114,7 +124,13 @@ def test_ocr():
 
 @ocr_workspace_bp.route("/document-types", methods=["GET"])
 def list_document_types():
-    doc_types = DocumentType.query.all()
+    allowed_codes = set(CANONICAL_DOCUMENT_TYPE_CODES)
+    doc_types = DocumentType.query.filter(DocumentType.code.in_(allowed_codes)).all()
+    ordered_doc_types = sorted(
+        doc_types,
+        key=lambda dt: CANONICAL_DOCUMENT_TYPE_CODES.index(dt.code) if dt.code in CANONICAL_DOCUMENT_TYPE_CODES else len(CANONICAL_DOCUMENT_TYPE_CODES),
+    )
+
     return jsonify([
         {
             "id": dt.id,
@@ -125,7 +141,7 @@ def list_document_types():
                 for f in sorted(dt.fields, key=lambda f: f.position)
             ]
         }
-        for dt in doc_types
+        for dt in ordered_doc_types
     ]), 200
 
 
@@ -217,10 +233,14 @@ def create_evaluation():
     if not doc_type:
         return jsonify({"error": "Document type not found"}), 404
 
-    from app.settings.settingsModels import OcrEngine
+    from backend.app.settings.settingsModels import OcrEngine
     engine = OcrEngine.query.get(engine_id)
     if not engine:
         return jsonify({"error": "OCR engine not found"}), 404
+
+    if not is_supported_engine(engine.code):
+        supported = ", ".join(get_supported_engine_codes())
+        return jsonify({"error": f"Unsupported OCR engine '{engine.code}'. Supported engines: {supported}"}), 400
 
     try:
         file_path, safe_name = save_upload_file(file)
@@ -266,10 +286,9 @@ def create_evaluation():
         new_evaluation.status = 'done'
 
     except Exception as e:
-        # Log the real error server-side; don't leak internals to the client.
         current_app.logger.exception("OCR processing failed for evaluation %s", new_evaluation.id)
         new_evaluation.status = 'error'
-        new_evaluation.error_message = "OCR processing failed. Please try again or contact support."
+        new_evaluation.error_message = str(e) if str(e) else "OCR processing failed. Please try again or contact support."
 
     db.session.commit()
 
@@ -498,7 +517,7 @@ def _process_batch_job(app, job_id):
         db.session.commit()
 
         doc_type = DocumentType.query.get(job.document_type_id)
-        from app.settings.settingsModels import OcrEngine
+        from backend.app.settings.settingsModels import OcrEngine
         engine = OcrEngine.query.get(job.engine_id)
 
         sorted_fields = sorted(doc_type.fields, key=lambda f: f.position) if doc_type else []
@@ -548,7 +567,7 @@ def _process_batch_job(app, job_id):
             except Exception as e:
                 app.logger.exception("Batch OCR failed for file %s in job %s", jf.file_name, job.id)
                 jf.status = 'error'
-                jf.error_message = "OCR processing failed for this file."
+                jf.error_message = str(e) if str(e) else "OCR processing failed for this file."
 
             job.completed_files += 1
             db.session.commit()
@@ -582,10 +601,14 @@ def create_evaluations_batch():
     if not doc_type:
         return jsonify({"error": "Document type not found"}), 404
 
-    from app.settings.settingsModels import OcrEngine
+    from backend.app.settings.settingsModels import OcrEngine
     engine = OcrEngine.query.get(engine_id)
     if not engine:
         return jsonify({"error": "OCR engine not found"}), 404
+
+    if not is_supported_engine(engine.code):
+        supported = ", ".join(get_supported_engine_codes())
+        return jsonify({"error": f"Unsupported OCR engine '{engine.code}'. Supported engines: {supported}"}), 400
 
     job = BatchJob(
         user_id=user_id,

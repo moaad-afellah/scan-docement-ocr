@@ -1,4 +1,4 @@
-from extention import db
+from backend.extention import db
 
 class OcrEngine(db.Model):
     __tablename__ = 'ocr_engines'

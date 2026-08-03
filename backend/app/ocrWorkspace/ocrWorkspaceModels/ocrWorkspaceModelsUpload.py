@@ -1,4 +1,7 @@
-from extention import db
+from backend.extention import db
+
+CANONICAL_DOCUMENT_TYPE_CODES = ("national_id_card", "passport", "invoice")
+
 
 class DocumentType(db.Model):
     __tablename__ = 'document_types'

@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from app.ocrWorkspace.ocrWorkspaceModels.ocrWorkspaceModelsProcess import Evaluation
-from app.settings.settingsModels import OcrEngine
+from backend.app.ocrWorkspace.ocrWorkspaceModels.ocrWorkspaceModelsProcess import Evaluation
+from backend.app.settings.settingsModels import OcrEngine
 
 dashboard_bp = Blueprint("dashboard", __name__)
 

@@ -1,7 +1,8 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from extention import db
-from app.settings.settingsModels import UserSettings, OcrEngine
+from backend.extention import db
+from backend.app.settings.settingsModels import UserSettings, OcrEngine
+from backend.app.ocrWorkspace.ocrWorkspaceServices.ocrWorkspaceServicesProcess import get_supported_engine_codes
 
 settings_bp = Blueprint("settings", __name__)
 
@@ -73,7 +74,8 @@ def update_settings(user_id=None):
 
 @settings_bp.route("/ocr-engines", methods=["GET"])
 def list_ocr_engines():
-    engines = OcrEngine.query.all()
+    supported_codes = set(get_supported_engine_codes())
+    engines = OcrEngine.query.filter(OcrEngine.code.in_(supported_codes)).all()
     return jsonify([
         {
           "id": engine.id,

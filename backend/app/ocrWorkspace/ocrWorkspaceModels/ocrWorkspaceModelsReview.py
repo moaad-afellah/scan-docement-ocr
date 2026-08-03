@@ -1,4 +1,4 @@
-from extention import db
+from backend.extention import db
 
 class EvaluationField(db.Model):
     __tablename__ = 'evaluation_fields'

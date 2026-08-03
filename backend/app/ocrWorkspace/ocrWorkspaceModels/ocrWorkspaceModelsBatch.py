@@ -18,7 +18,7 @@ ASSUMPTION TO VERIFY:
     
 import uuid
 from datetime import datetime
-from extention import db
+from backend.extention import db
 
 
 def generate_job_id():
