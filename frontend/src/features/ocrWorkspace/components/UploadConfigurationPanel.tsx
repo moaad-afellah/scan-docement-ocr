@@ -94,6 +94,27 @@ export function UploadConfigurationPanel({
         </div>
       </div>
 
+      {selectedDocumentType ? (
+        <div className="rounded-2xl border border-[#222334] bg-[#11131a] p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="text-sm font-semibold text-white">Fields for {selectedDocumentType.name}</div>
+            <div className="text-xs uppercase tracking-[0.24em] text-[#7b8494]">
+              {selectedDocumentType.fields.length} fields
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {selectedDocumentType.fields.map((field) => (
+              <span
+                key={field.id}
+                className="rounded-full border border-[#2a2a39] bg-[#171722] px-3 py-1 text-xs text-[#d1d5db]"
+              >
+                {field.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <div className="rounded-2xl border border-dashed border-[#353851] bg-[#0e1018] p-6">
         <label
           className="flex min-h-[220px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-[#222334] bg-[#12131b] text-center transition hover:border-[#3d4b74]"

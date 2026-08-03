@@ -5,7 +5,6 @@ export const TOKEN_STORAGE_KEY = "verascan_token";
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  headers: { "Content-Type": "application/json" },
 });
 
 // Attach the JWT to every outgoing request, if we have one.

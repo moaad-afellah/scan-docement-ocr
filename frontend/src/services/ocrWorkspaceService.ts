@@ -1,4 +1,4 @@
-import { apiClient } from "./apiClient";
+import { apiClient, getApiErrorMessage } from "./apiClient";
 
 // --- Document types ---------------------------------------------------
 
@@ -82,11 +82,7 @@ export const ocrWorkspaceService = {
     formData.append("engine_id", String(engineId));
     formData.append("document_type_id", String(documentTypeId));
 
-    return apiClient
-      .post<Evaluation>("/evaluations", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      })
-      .then((r) => r.data);
+    return apiClient.post<Evaluation>("/evaluations", formData).then((r) => r.data);
   },
 
   getEvaluation(evaluationId: number) {
@@ -137,11 +133,7 @@ export const ocrWorkspaceService = {
     formData.append("engine_id", String(engineId));
     formData.append("document_type_id", String(documentTypeId));
 
-    return apiClient
-      .post<BatchJobResponse>("/evaluations/batch", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      })
-      .then((r) => r.data);
+    return apiClient.post<BatchJobResponse>("/evaluations/batch", formData).then((r) => r.data);
   },
 
   getBatchStatus(jobId: string) {
