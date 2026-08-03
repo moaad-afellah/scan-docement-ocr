@@ -1,10 +1,11 @@
-import { Eye, Trash2, Download } from "lucide-react";
+import { Trash2, Download } from "lucide-react";
 import type { HistoryEntry } from "../../../services/historyService";
 
 interface HistoryTableProps {
   entries: HistoryEntry[];
   selectedEntryId: number | null;
   onSelectEntry: (entryId: number) => void;
+  onDownload: (entryId: number) => void;
   onDelete: (entryId: number) => void;
 }
 
@@ -33,7 +34,7 @@ const accuracyTone = (value: number | null) => {
   return "bg-[#34191d] text-rose-300";
 };
 
-export function HistoryTable({ entries, selectedEntryId, onSelectEntry, onDelete }: HistoryTableProps) {
+export function HistoryTable({ entries, selectedEntryId, onSelectEntry, onDownload, onDelete }: HistoryTableProps) {
   return (
     <div className="overflow-hidden rounded-2xl border border-[#1e2130] bg-[#0d0f17]">
       <div className="grid grid-cols-[1.3fr_0.8fr_0.9fr_0.8fr_0.5fr] items-center gap-4 border-b border-[#1d2030] px-5 py-4 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#7b8494]">
@@ -48,7 +49,8 @@ export function HistoryTable({ entries, selectedEntryId, onSelectEntry, onDelete
         {entries.map((entry) => (
           <div
             key={entry.id}
-            className={`grid grid-cols-[1.3fr_0.8fr_0.9fr_0.8fr_0.5fr] items-center gap-4 border-b border-[#1a1c2b] px-5 py-4 transition hover:bg-[#111420] ${
+            onClick={() => onSelectEntry(entry.id)}
+            className={`grid cursor-pointer grid-cols-[1.3fr_0.8fr_0.9fr_0.8fr_0.5fr] items-center gap-4 border-b border-[#1a1c2b] px-5 py-4 transition hover:bg-[#111420] ${
               selectedEntryId === entry.id ? "bg-[#121623]" : ""
             }`}
           >
@@ -64,10 +66,12 @@ export function HistoryTable({ entries, selectedEntryId, onSelectEntry, onDelete
               </span>
 
               <div className="flex items-center gap-2 text-[#9ca3af]">
-                <button type="button" className="rounded-md p-1 hover:bg-[#1a1d2a] hover:text-white" aria-label="View entry">
-                  <Eye size={15} />
-                </button>
-                <button type="button" className="rounded-md p-1 hover:bg-[#1a1d2a] hover:text-white" aria-label="Download entry">
+                <button
+                  type="button"
+                  className="rounded-md p-1 hover:bg-[#1a1d2a] hover:text-white"
+                  aria-label="Download entry"
+                  onClick={() => onDownload(entry.id)}
+                >
                   <Download size={15} />
                 </button>
                 <button

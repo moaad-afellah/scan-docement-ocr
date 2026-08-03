@@ -20,7 +20,9 @@ export function HistoryPage() {
     isError,
     errorMessage,
     accuracySummary,
+    downloadEntry,
     removeEntry,
+    selectedEvaluation,
   } = useHistoryEntries();
 
   return (
@@ -90,10 +92,11 @@ export function HistoryPage() {
             entries={entries}
             selectedEntryId={selectedEntryId}
             onSelectEntry={setSelectedEntryId}
+            onDownload={downloadEntry}
             onDelete={removeEntry}
           />
 
-          <HistoryDetailPanel entry={selectedEntry} accuracySummary={accuracySummary} />
+          <HistoryDetailPanel entry={selectedEntry} evaluation={selectedEvaluation} accuracySummary={accuracySummary} />
         </div>
       )}
     </div>
