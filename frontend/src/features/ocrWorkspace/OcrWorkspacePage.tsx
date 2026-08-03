@@ -32,9 +32,12 @@ export function OcrWorkspacePage() {
     processFiles,
     continueToReview,
     updateReferenceField,
+    useOcrValueAsReference,
     addCustomField,
     saveEvaluation,
     exportEvaluation,
+    resetWorkflow,
+    hasSavedEvaluation,
     setCustomFields,
   } = useOcrWorkspaceWorkflow();
 
@@ -92,22 +95,29 @@ export function OcrWorkspacePage() {
         </div>
       ) : null}
 
-      {activeStep === 2 && currentEvaluation ? (
+      {activeStep === 2 ? (
         <div className="space-y-5">
           <ProcessingPanel
             engineName={selectedEngine?.name ?? "OCR engine"}
-            fileName={selectedFiles[0]?.name ?? currentEvaluation.file_name ?? "Queued file"}
+            fileName={selectedFiles[0]?.name ?? currentEvaluation?.file_name ?? "Queued file"}
+            isProcessing={isProcessing || !currentEvaluation}
           />
 
           <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={goToReview}
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-950/40"
-            >
-              Continue to review
-              <ArrowRight className="h-4 w-4" />
-            </button>
+            {currentEvaluation ? (
+              <button
+                type="button"
+                onClick={goToReview}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-950/40"
+              >
+                Continue to review
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            ) : (
+              <div className="rounded-xl border border-[#2a2a39] bg-[#11131a] px-4 py-3 text-sm text-[#9ca3af]">
+                Waiting for OCR engine to finish…
+              </div>
+            )}
           </div>
         </div>
       ) : null}
@@ -119,6 +129,7 @@ export function OcrWorkspacePage() {
           referenceDraft={referenceDraft}
           customFields={customFields}
           onReferenceChange={updateReferenceField}
+          onUseOcrAsReference={useOcrValueAsReference}
           onAddField={addCustomField}
           onCustomFieldChange={(index, field) => {
             const next = [...customFields];
@@ -127,6 +138,8 @@ export function OcrWorkspacePage() {
           }}
           onSave={saveEvaluation}
           onExport={exportEvaluation}
+          onBackToStart={resetWorkflow}
+          showBackToStartButton={hasSavedEvaluation}
           saving={saving}
           accuracySummary={accuracySummary}
         />

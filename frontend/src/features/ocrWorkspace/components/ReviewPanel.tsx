@@ -6,10 +6,13 @@ interface ReviewPanelProps {
   referenceDraft: Record<string, string>;
   customFields: Array<{ label: string; ocr_value: string; reference_value: string }>;
   onReferenceChange: (id: string, value: string) => void;
+  onUseOcrAsReference: (id: string) => void;
   onAddField: () => void;
   onCustomFieldChange: (index: number, field: Partial<{ label: string; ocr_value: string; reference_value: string }>) => void;
   onSave: () => Promise<void>;
   onExport: () => Promise<void>;
+  onBackToStart: () => void;
+  showBackToStartButton: boolean;
   saving: boolean;
   accuracySummary: {
     correct: number;
@@ -25,10 +28,13 @@ export function ReviewPanel({
   referenceDraft,
   customFields,
   onReferenceChange,
+  onUseOcrAsReference,
   onAddField,
   onCustomFieldChange,
   onSave,
   onExport,
+  onBackToStart,
+  showBackToStartButton,
   saving,
   accuracySummary,
 }: ReviewPanelProps) {
@@ -60,9 +66,18 @@ export function ReviewPanel({
             </div>
             <div className="space-y-2">
               {evaluation.fields.map((field) => (
-                <div key={field.id} className="rounded-lg border border-[#232334] bg-[#161822] px-3 py-2">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#7b8494]">{field.label}</div>
-                  <div className="text-sm text-white">{field.ocr_value ?? "-"}</div>
+                <div key={field.id} className="flex items-start justify-between gap-3 rounded-lg border border-[#232334] bg-[#161822] px-3 py-2">
+                  <div>
+                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#7b8494]">{field.label}</div>
+                    <div className="text-sm text-white">{field.ocr_value ?? "-"}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onUseOcrAsReference(String(field.id))}
+                    className="rounded-lg border border-[#2a2a39] px-3 py-1.5 text-[11px] font-semibold text-[#b7c0d6] transition hover:border-indigo-400 hover:text-white"
+                  >
+                    Use as reference
+                  </button>
                 </div>
               ))}
             </div>
@@ -155,6 +170,15 @@ export function ReviewPanel({
         >
           Export
         </button>
+        {showBackToStartButton ? (
+          <button
+            type="button"
+            onClick={onBackToStart}
+            className="rounded-xl border border-[#2a2a39] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#161822]"
+          >
+            Back to step 1
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={onSave}

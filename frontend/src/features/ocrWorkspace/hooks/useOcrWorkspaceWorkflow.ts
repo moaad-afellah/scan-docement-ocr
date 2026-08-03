@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { getApiErrorMessage } from "../../../services/apiClient";
 import { ocrWorkspaceService, type DocumentType, type Evaluation } from "../../../services/ocrWorkspaceService";
 import { settingsService, type OcrEngine } from "../../../services/settingsService";
 
@@ -14,6 +15,7 @@ export function useOcrWorkspaceWorkflow() {
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [hasSavedEvaluation, setHasSavedEvaluation] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [referenceDraft, setReferenceDraft] = useState<Record<string, string>>({});
   const [customFields, setCustomFields] = useState<Array<{ label: string; ocr_value: string; reference_value: string }>>([]);
@@ -104,16 +106,27 @@ export function useOcrWorkspaceWorkflow() {
 
     setIsProcessing(true);
     setError(null);
+    setCurrentEvaluation(null);
+    setReferenceDraft({});
+    setCustomFields([]);
+    setHasSavedEvaluation(false);
+    setActiveStep(2);
+
+    if (currentFilePreviewUrl) {
+      window.URL.revokeObjectURL(currentFilePreviewUrl);
+    }
+    setCurrentFilePreviewUrl(null);
 
     try {
       const evaluation = await ocrWorkspaceService.createEvaluation(file, engineId, documentTypeId);
       setCurrentEvaluation(evaluation);
-      setActiveStep(2);
 
       const previewUrl = await ocrWorkspaceService.getEvaluationFileUrl(evaluation.id);
       setCurrentFilePreviewUrl(previewUrl);
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "OCR processing failed.");
+      setActiveStep(1);
+      setCurrentEvaluation(null);
+      setError(getApiErrorMessage(createError, "OCR processing failed."));
     } finally {
       setIsProcessing(false);
     }
@@ -130,6 +143,27 @@ export function useOcrWorkspaceWorkflow() {
       ...draft,
       [id]: value,
     }));
+  };
+
+  const useOcrValueAsReference = (id: string) => {
+    const field = currentEvaluation?.fields.find((item) => String(item.id) === id);
+    if (!field) return;
+
+    updateReferenceField(id, field.ocr_value ?? "");
+  };
+
+  const resetWorkflow = () => {
+    setActiveStep(1);
+    setSelectedFiles([]);
+    setCurrentEvaluation(null);
+    setHasSavedEvaluation(false);
+    setReferenceDraft({});
+    setCustomFields([]);
+    setError(null);
+    if (currentFilePreviewUrl) {
+      window.URL.revokeObjectURL(currentFilePreviewUrl);
+    }
+    setCurrentFilePreviewUrl(null);
   };
 
   const addCustomField = () => {
@@ -168,6 +202,7 @@ export function useOcrWorkspaceWorkflow() {
       });
 
       setCurrentEvaluation(updated);
+      setHasSavedEvaluation(true);
       setReferenceDraft({});
       setCustomFields([]);
     } catch (saveError) {
@@ -202,6 +237,7 @@ export function useOcrWorkspaceWorkflow() {
     isLoading,
     isProcessing,
     saving,
+    hasSavedEvaluation,
     error,
     referenceDraft,
     customFields,
@@ -212,9 +248,11 @@ export function useOcrWorkspaceWorkflow() {
     processFiles,
     continueToReview,
     updateReferenceField,
+    useOcrValueAsReference,
     addCustomField,
     saveEvaluation,
     exportEvaluation,
+    resetWorkflow,
     setCurrentFilePreviewUrl,
     setCustomFields,
   };
